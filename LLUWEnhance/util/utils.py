@@ -1,3 +1,22 @@
+import os
+import glob
+import random
+import numpy as np
+from PIL import Image
+import sys
+import numpy as np
+import random
+import glob
+import tensorflow as tf
+import tensorflow.keras.backend as K
+
+def progress(epoch, trained_sample ,total_sample, bar_length=25, total_loss=0, message=""):
+    percent = float(trained_sample) / total_sample
+    hashes = '#' * int(round(percent * bar_length))
+    spaces = ' ' * (bar_length - len(hashes))
+    sys.stdout.write("\rEpoch {0}: [{1}] {2}%  ----- Loss: {3}".format(epoch, hashes + spaces, int(round(percent * 100)), float(total_loss)) + message)
+    sys.stdout.flush()
+
 """
 Process image before training
 
@@ -8,23 +27,6 @@ TrainB: clean image
 2. shuffle TrainA and TrainB
 3. Augmentation (optional)
 """
-
-import os
-import glob
-import random
-import numpy as np
-# import cv2
-from scipy import misc
-import imageio
-import PIL.Image
-import sys
-
-def progress(epoch, trained_sample ,total_sample, bar_length=25, total_loss=0, message=""):
-    percent = float(trained_sample) / total_sample
-    hashes = '#' * int(round(percent * bar_length))
-    spaces = ' ' * (bar_length - len(hashes))
-    sys.stdout.write("\rEpoch {0}: [{1}] {2}%  ----- Loss: {3}".format(epoch, hashes + spaces, int(round(percent * 100)), float(total_loss)) + message)
-    sys.stdout.flush()
 
 def normalize_image(x):
         """
@@ -98,7 +100,6 @@ class BatchRename(object):
                 i = i + 1
         print('total %d to rename & converted %d jpgs' % (total_num, i-1))
 
-
 class ImageProcess():
     """
     Process image before training
@@ -157,11 +158,11 @@ class ImageProcess():
         for a, b in zip(batchA_paths, batchB_paths):
             # a_img = self.normalize_image(misc.imresize(misc.imread(a).astype('float32'),
             #                                            size=(256, 256), interp='cubic'))
-            a_img = self.normalize_image(np.array(PIL.Image.open(a)).astype(np.float32))
+            a_img = self.normalize_image(np.array(Image.open(a)).astype(np.float32))
                 #misc.imread(a).astype('float32'))
             # b_img = self.normalize_image(misc.imresize(misc.imread(b).astype('float32'),
             #                                            size=(256, 256), interp='cubic'))
-            b_img = self.normalize_image(np.array(PIL.Image.open(b)).astype(np.float32))
+            b_img = self.normalize_image(np.array(Image.open(b)).astype(np.float32))
                 #misc.imread(b).astype('float32'))
 
             # data augmentation
@@ -217,14 +218,61 @@ class ImageProcess():
 
         return x, y
 
+def populate_train_list(lowlight_images_path):
+    image_list_lowlight = glob.glob(lowlight_images_path + "**/*.JPG" , recursive=True)
 
-# if __name__ == '__main__':
-#
-#     img = ImageProcess(pathA ='./dataset/trainA/*.jpg',
-#                        pathB ='./dataset/trainB/*.jpg',
-#                        batch_size=1,
-#                        is_aug=True)
-#     a, b = img.load_data()
-#     im_a, im_b = img.shuffle_data(a, b)
-#     print(a, b)
-#     print(im_a, im_b)
+    train_list = image_list_lowlight
+
+    random.shuffle(train_list)
+
+    return train_list
+
+class DataGenerator(tf.keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, lowlight_images_path, batch_size):
+        self.train_list = populate_train_list(lowlight_images_path)
+        self.size = 256
+        self.data_list = self.train_list
+        self.batch_size = batch_size
+        self.n_channels = 3
+        print("Total training examples:", len(self.train_list))	
+
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.train_list) / self.batch_size))
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        indexes = self.data_list[index*self.batch_size:(index+1)*self.batch_size]
+
+        # Generate data
+        X = self.__data_generation(indexes)
+
+        return X
+
+    def on_epoch_end(self):
+        'Updates indexes after each epoch'
+        self.indexes = np.arange(len(self.list_IDs))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+
+    def __data_generation(self, indexes):
+        'Generates data containing batch_size samples' # X : (n_samples, *dim, n_channels)
+        # Initialization
+        X = np.empty((self.batch_size, self.size, self.size, self.n_channels))
+
+        # Generate data
+        for i, ID in enumerate(indexes):
+            # Store sample
+            data_lowlight_path = ID
+		
+            data_lowlight = Image.open(data_lowlight_path)
+            
+            data_lowlight = data_lowlight.resize((self.size,self.size), Image.ANTIALIAS)
+
+            data_lowlight = (np.asarray(data_lowlight)/255.0) 
+            X[i,] = data_lowlight
+
+        return K.variable(X)
